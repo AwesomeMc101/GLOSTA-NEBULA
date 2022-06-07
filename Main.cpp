@@ -24,7 +24,7 @@ namespace lineBreak
         std::string line;
         while (std::getline(f, line)) {
             key.push_back(line.c_str());
-            std::cout << "Line Pushback: " << line << std::endl;
+            //std::cout << "Line Pushback: " << line << std::endl;
         }
         return key;
     }
@@ -53,8 +53,9 @@ int main()
         std::vector<std::string> lines = lineBreak::lineScan(code);
         for (std::string line : lines)
         {
-            std::cout << "line: " << line;
+            //std::cout << "line: " << line;
             gloneb_vm(line.c_str(), stack);
+            std::cout << std::endl;
         }
     }
 }
