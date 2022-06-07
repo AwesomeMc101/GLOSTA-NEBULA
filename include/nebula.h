@@ -1,5 +1,12 @@
+#include <vector>
+#include <Windows.h>
+#include <string>
 
-/* 
+#include <iostream>
+#include <map>
+
+
+/*
 
 * WRITTEN BY AWESOMEMC101 FOR LUNAR GUARD TECHNOLOGIES
 
@@ -8,12 +15,6 @@
 * I DO PLAN ON MAYBE UPDATING THIS :)
 
 */
-
-#include <vector>
-#include <Windows.h>
-#include <string>
-
-#include <iostream>
 
 namespace Variables
 {
@@ -26,17 +27,45 @@ namespace Variables
 	class varStack
 	{
 	public:
-		std::vector<vartype> variables;
+		//std::vector<vartype> variables;
+		std::map<std::string, std::string> variables{};
 
+		void pop(const char* name, char* val)
+		{
+			variables[name] = val;
+
+			//std::cout << "vstack name: " << va.name << " || val: " << va.value << std::endl;
+
+			
+		}
+		bool checkIsVar(const char* name)
+		{
+			/*for (vartype va : variables)
+			{
+				if (strcmp(va.name, name) == 0)
+				{
+					return true;
+				}
+			}*/
+			if (variables.find(name) != variables.end()) {
+				return true;
+			}
+			return false;
+		}
 		char* retValue(std::string _var)
 		{
-			for (vartype var : variables)
+			/*for (int i = 0; i < variables.size(); i++)
 			{
-				if (var.name == _var)
+				vartype var = variables[i];
+				if (strcmp(var.name, _var.c_str()) == 0)
 				{
+					std::cout << "varname: " << _var.c_str() << " or normal " << _var << std::endl;
+					std::cout << "ret value true (" << var.value << ")\n";
 					return var.value;
 				}
-			}
+			}*/
+			return (char*)variables[_var].c_str();
+			return (char*)"NO_SUCH_VARIABLE";
 		}
 	};
 }
@@ -69,6 +98,7 @@ typedef enum TYPES
 	INTEGER,
 	VARDEF,
 	VARNAME,
+	VARREF, //reference to var
 	RANDOMVAL,
 	/* --- */
 	ADD,
@@ -123,6 +153,12 @@ namespace miniLexer
 		}
 		return false;
 	}
+
+	BOOL isVarName(std::string x, Stack stack)
+	{
+		return stack.variableStack.checkIsVar(x.c_str());
+	}
+
 	BOOL isSwitchIf(std::string x)
 	{
 		if (x == "if")
@@ -171,6 +207,14 @@ namespace miniLexer
 		}
 		return false;
 	}
+	BOOL isCloseString(std::string data)
+	{
+		if (data[data.length()-1] == '"' || data[data.length()-1] == '\'')
+		{
+			return true;
+		}
+		return false;
+	}
 	BOOL isVarDef(std::string data)
 	{
 		if (data[0] == 'v' && data[1] == 'a' && data[2] == 'r')
@@ -211,9 +255,14 @@ namespace miniLexer
 	}
 
 
-	typeSet returnType(std::string& x, std::vector<typeSet> types)
+	typeSet returnType(std::string& x, std::vector<typeSet> types, Stack stack)
 	{
 		typeSet last_type = typeSet::NIL;
+		if (types.size() > 0)
+		{
+			last_type = types[types.size() - 1];
+			//std::cout << "\nLast type: " << last_type << std::endl;
+		}
 		//try
 		//{
 		//	//last_type = types[types.size() - 1];
@@ -264,6 +313,12 @@ namespace miniLexer
 		{
 			return typeSet::VARNAME;
 		}
+		if (isVarName(x, stack))
+		{
+			/* only use the non-return code for on-interpret var->val */
+			//x = stack.variableStack.retValue(x);
+			return typeSet::VARREF;
+		}
 		return typeSet::NIL;
 	}
 }
@@ -276,15 +331,47 @@ void gloneb_vm(const char* code, Stack& stack)
 
 	char* token;
 	char* rest = (char*)code;
+	BOOL setToString = false;
+	int stringLoc;
 	while ((token = strtok_s(rest, " ", &rest)))
 	{
 		//std::cout << "Token: " << token << std::endl;
-		keys.push_back(token);
+		if (setToString)
+		{
+			keys[stringLoc] += " ";
+			keys[stringLoc] += token;
+			if (miniLexer::isCloseString(token))
+			{
+				setToString = false;
+			}
+		}
+		if (miniLexer::isString(token))
+		{
+			if (miniLexer::isCloseString(token))
+			{
+				keys.push_back(token);
+				continue;
+			}
+			setToString = true;
+			stringLoc = keys.size();
+			keys.push_back(token);
+		}
+		else
+		{
+			keys.push_back(token);
+		}
 	}
 	for (int i = 0; i < keys.size(); i++)
 	{
 		std::string key = keys[i];
-		types.push_back(miniLexer::returnType(keys[i], types));
+		typeSet type = miniLexer::returnType(keys[i], types, stack);
+		if (type == typeSet::VARREF)
+		{
+			keys[i] = stack.variableStack.retValue(keys[i]);
+			//std::cout << "new keys[i]: " << keys[i] << std::endl;
+			stack.pop(keys[i]);
+		}
+		types.push_back(type);
 	}
 
 	bool skipnext = false;
@@ -346,6 +433,11 @@ void gloneb_vm(const char* code, Stack& stack)
 			stack.pop(std::to_string(std::stod(keys[type - 1]) / std::stod(stack.gettop())));
 			skipnext = true;
 			break;
+		case typeSet::VARNAME:
+			stack.variableStack.pop(keys[type].c_str(), (char*)stack.gettop().c_str());
+			break;
+		//case typeSet::VARREF:
+		//	stack.pop(stack.variableStack.retValue(keys[type]));
 		}
 		
 	}
