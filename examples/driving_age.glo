@@ -1,0 +1,11 @@
+var age = 0
+print "Type your age!"
+getinput age
+
+if age > 15
+print "You are old enough to drive"
+endif
+
+if age < 16
+print "You are not old enough to drive"
+endif
