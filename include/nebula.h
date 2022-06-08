@@ -52,6 +52,12 @@ namespace Variables
 			}
 			return false;
 		}
+		void setValue(std::string _var, std::string _val)
+		{
+			//std::cout << "Setting " << _var << " to " << _val << std::endl;
+			variables[_var] = _val;
+			
+		}
 		char* retValue(std::string _var)
 		{
 			/*for (int i = 0; i < variables.size(); i++)
@@ -64,6 +70,7 @@ namespace Variables
 					return var.value;
 				}
 			}*/
+			//std::cout << "Map Size: " << variables.size() << std::endl;
 			return (char*)variables[_var].c_str();
 			return (char*)"NO_SUCH_VARIABLE";
 		}
@@ -138,12 +145,17 @@ typedef enum TYPES
 	SUB,
 	MUL,
 	DIV,
+	POW,
 	DEQUAL,
 	UEQUAL,
+	GREATERTHAN,
+	LESSTHAN,
 	OPENIF,
 	CLOSEIF,
+	ELSEIF, //just else, not else if
 	OPENFUNCTION,
-	CLOSEFUNCTION
+	CLOSEFUNCTION,
+	COMMENT,
 } typeSet;
 
 
@@ -151,10 +163,37 @@ void gloneb_vm(const char* code, Stack& stack);
 
 namespace keycall
 {
-	std::vector<const char*> keycalls = { "print" };
+	std::vector<const char*> keycalls = { "print", "getinput", "rand"};
 	void print(const char* key)
 	{
 		std::cout << "\nPRINTING: " << key << std::endl;
+	}
+
+	void getinput(Stack& stack, const char* var)
+	{
+		std::string towrite = "";
+		std::getline(std::cin, towrite);
+		
+		if (stack.variableStack.checkIsVar(stack.stack[stack.top - 1].c_str()))
+		{
+			//std::cout << "Variable found" << std::endl;
+			stack.variableStack.setValue(stack.stack[stack.top - 1], towrite);
+		}
+		else
+		{
+			//std::cout << "No such variable: " << stack.stack[stack.top - 1] << std::endl;
+		}
+
+	}
+
+	void random(char* _arg, Stack& stack)
+	{
+		srand(time(0));
+
+		std::string arg = _arg;
+
+		int rat = rand() % (std::stoi(arg));
+		stack.pop(std::to_string(rat));
 	}
 
 	void keycall(std::string key, char* arg, Stack& stack)
@@ -162,6 +201,14 @@ namespace keycall
 		if (key == "print")
 		{
 			print(arg);
+		}
+		if (key == "getinput")
+		{
+			getinput(stack, arg);
+		}
+		if (key == "rand")
+		{
+			random(arg, stack);
 		}
 	}
 }
@@ -171,6 +218,9 @@ namespace uKeycall
 	void execute(Stack& stack, std::string name)
 	{
 		std::vector<std::string> code = stack.uKeycallStack.returnCode(name);
+
+		Stack tstack;
+
 		for (std::string co : code)
 		{
 			gloneb_vm(co.c_str(), stack);
@@ -297,6 +347,15 @@ namespace miniLexer
 		return false;
 	}
 
+	BOOL isComment(std::string data)
+	{
+		if (data[0] == '$' && data[1] == '$')
+		{
+			return true;
+		}
+		return false;
+	}
+
 	typeSet isOperator(char* data)
 	{
 		//no need to use std::string data since its 1 character
@@ -316,6 +375,10 @@ namespace miniLexer
 		{
 			return typeSet::DIV;
 		}
+		if (data[0] == '^')
+		{
+			return typeSet::POW;
+		}
 		if (data[0] == '=' && data[1] == '=')
 		{
 			return typeSet::DEQUAL;
@@ -324,9 +387,16 @@ namespace miniLexer
 		{
 			return typeSet::UEQUAL;
 		}
+		if (data[0] == '>')
+		{
+			return typeSet::GREATERTHAN;
+		}
+		if (data[0] == '<')
+		{
+			return typeSet::LESSTHAN;
+		}
 		return typeSet::NIL;
 	}
-
 
 	typeSet returnType(std::string& x, std::vector<typeSet> types, Stack stack)
 	{
@@ -402,12 +472,21 @@ namespace miniLexer
 		{
 			return typeSet::VARNAME;
 		}
+		if (last_type == typeSet::OPENFUNCTION)
+		{
+			return typeSet::STRING;
+		}
 		if (isVarName(x, stack))
 		{
 			/* only use the non-return code for on-interpret var->val */
 			//x = stack.variableStack.retValue(x);
 			return typeSet::VARREF;
 		}
+		if (isComment(x))
+		{
+			return typeSet::COMMENT;
+		}
+		
 		return typeSet::NIL;
 	}
 }
@@ -452,6 +531,7 @@ void gloneb_vm(const char* code, Stack& stack)
 			{
 				setToString = false;
 			}
+			continue;
 		}
 		if (miniLexer::isString(token))
 		{
@@ -475,9 +555,15 @@ void gloneb_vm(const char* code, Stack& stack)
 		typeSet type = miniLexer::returnType(keys[i], types, stack);
 		if (type == typeSet::VARREF)
 		{
+			stack.pop(keys[i]);
 			keys[i] = stack.variableStack.retValue(keys[i]);
 			//std::cout << "new keys[i]: " << keys[i] << std::endl;
+			
 			stack.pop(keys[i]);
+		}
+		if (type == typeSet::COMMENT)
+		{
+			break;
 		}
 		types.push_back(type);
 	}
@@ -528,14 +614,14 @@ void gloneb_vm(const char* code, Stack& stack)
 			uKeycall::execute(stack, stack.gettop());
 			break;
 		case typeSet::ADD:
-			if (types[type - 1] == typeSet::STRING)
+			if (types[type - 1] == typeSet::STRING || types[type + 1] == typeSet::STRING)
 			{
-				stack.pop((char*)(const_cast<char*>(keys[type - 1].c_str()) + (std::string)stack.gettop()).c_str());
+				stack.pop(keys[type - 1] + ' ' + (std::string)stack.gettop());
 			}
 			else
 			{
 				//std::cout << "Adding: " << (keys[type - 1]);
-				std::cout << " + " << (stack.gettop()) << std::endl;
+				//std::cout << " + " << (stack.gettop()) << std::endl;
 				stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
 			}
 			skipnext = true;
@@ -556,6 +642,10 @@ void gloneb_vm(const char* code, Stack& stack)
 			//std::cout << "Adding: " << (keys[type - 1]);
 			//std::cout << " + " << (stack.gettop()) << std::endl;
 			stack.pop(std::to_string(std::stod(keys[type - 1]) / std::stod(stack.gettop())));
+			skipnext = true;
+			break;
+		case typeSet::POW: //how men
+			stack.pop(std::to_string(pow(std::stoi(keys[type - 1]) , std::stoi(stack.gettop()))));
 			skipnext = true;
 			break;
 		case typeSet::VARNAME:
@@ -585,6 +675,32 @@ void gloneb_vm(const char* code, Stack& stack)
 				stack.pop("true");
 			}
 			break;
+		case typeSet::GREATERTHAN:
+			//std::cout << "Checking if " + stack.gettop() + " > " << keys[type - 1];
+			if (keys[type - 1] > stack.gettop())
+			{
+				skipnext = true;
+				stack.pop("true");
+			}
+			else
+			{
+				skipnext = true;
+				stack.pop("false");
+			}
+			break;
+		case typeSet::LESSTHAN:
+			//std::cout << "Checking if " + stack.gettop() + " > " << keys[type - 1];
+			if (keys[type - 1] < stack.gettop())
+			{
+				skipnext = true;
+				stack.pop("true");
+			}
+			else
+			{
+				skipnext = true;
+				stack.pop("false");
+			}
+			break;
 		case typeSet::OPENIF:
 			//std::cout << "\nOpenif with stacktop: " << stack.gettop() << std::endl;
 			if (stack.gettop() == "true")
@@ -594,7 +710,7 @@ void gloneb_vm(const char* code, Stack& stack)
 			else
 			{
 				//dont run
-				std::cout << "set wrong" << std::endl;
+				//std::cout << "set wrong" << std::endl;
 				stack.ifWrong = true;
 			}
 			break;
