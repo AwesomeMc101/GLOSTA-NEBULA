@@ -1,0 +1,14 @@
+print "Guess a number 0-10"
+var number rand 10
+var guess 0
+
+getinput guess
+
+if guess == number
+print "Correct"
+endif
+
+if guess != number
+var wrong = "Wrong! The number was" + number
+print wrong
+endif
