@@ -16,6 +16,80 @@
 
 */
 
+namespace UserStack
+{
+	class userStack
+	{
+	public:
+		std::string name;
+		std::vector<std::string> items;
+		int top = -1;
+	};
+	class userstackStack
+	{
+	public:
+		std::vector<userStack> uStack;
+
+		void newStack(std::string name)
+		{
+			userStack uS;
+			uS.name = name;
+			uStack.push_back(uS);
+			return;
+		}
+		void pushStack(std::string name, std::string value)
+		{
+			for (int i = 0; i < uStack.size(); i++)
+			{
+				if (uStack[i].name == name)
+				{
+					uStack[i].items.push_back(value);
+					uStack[i].top++;
+					return;
+				}
+			}
+		}
+		std::string indexStack(std::string name, std::string index)
+		{
+			for (int i = 0; i < uStack.size(); i++)
+			{
+				if (uStack[i].name == name)
+				{
+					if (index == "top" || index == "size")
+					{
+						return uStack[i].items[uStack[i].top];
+					}
+					else
+					{
+						try {
+							std::string to_return = uStack[i].items[std::stoi(index)];
+							return to_return;
+						}
+						catch (std::exception er)
+						{
+							return "OUT_OF_RANGE";
+						}
+					}
+				}
+			}
+			return "NO_SUCH_STACK";
+		}
+		bool isStack(std::string name)
+		{
+			//std::cout << "Passed stack name: " << name << std::endl;
+			for (int i = 0; i < uStack.size(); i++)
+			{
+				//std::cout << "Scanned stack name: " << uStack[i].name << std::endl;
+				if (uStack[i].name == name)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+	};
+}
+
 namespace Variables
 {
 	class vartype {
@@ -109,6 +183,7 @@ public:
 	int top = -1;
 	Variables::varStack variableStack;
 	userKeycall::uKeycallStack uKeycallStack;
+	UserStack::userstackStack userStackStack;
 
 	void pop(std::string arg)
 	{
@@ -126,6 +201,13 @@ public:
 	bool functionWriter = false;
 	std::string functionWriterName = "";
 	std::vector<std::string> functionsCode;
+
+	bool loopWriter = false;
+	long long int toLoopNum = 0;
+	std::vector<std::string> loopCode;
+	bool runLoop = false;
+
+	bool finishEarly = false;
 };
 
 typedef enum TYPES
@@ -156,6 +238,19 @@ typedef enum TYPES
 	OPENFUNCTION,
 	CLOSEFUNCTION,
 	COMMENT,
+	/* ---- */
+	NEWSTACK,
+	NEWSTACKNAME,
+	PUSHSTACK,
+	PUSHSTACKNAME,
+	PUSHSTACKVALUE,
+	INDEXSTACK,
+	INDEXSTACKNAME,
+	INDEXSTACKAT,
+	/* ---- */
+	STARTFOR,
+	ENDFOR,
+	FINISHEARLY,
 } typeSet;
 
 
@@ -188,8 +283,6 @@ namespace keycall
 
 	void random(char* _arg, Stack& stack)
 	{
-		srand(time(0));
-
 		std::string arg = _arg;
 
 		int rat = rand() % (std::stoi(arg));
@@ -237,6 +330,22 @@ namespace evalIf
 			return true;
 		}
 		return false;
+	}
+}
+
+namespace glosta_gc
+{
+	void collectStatementGarbage(Stack& stack)
+	{
+		stack.finishEarly = false;
+		stack.functionWriter = false;
+		stack.functionsCode.clear();
+		stack.functionWriterName.clear();
+		stack.loopCode.clear();
+		stack.loopWriter = false;
+		stack.runLoop = false;
+		stack.toLoopNum = 0;
+		stack.ifWrong = false;
 	}
 }
 
@@ -350,6 +459,60 @@ namespace miniLexer
 	BOOL isComment(std::string data)
 	{
 		if (data[0] == '$' && data[1] == '$')
+		{
+			return true;
+		}
+		return false;
+	}
+
+	BOOL isNewStack(std::string data)
+	{
+		if (data == "newstack")
+		{
+			return true;
+		}
+		return false;
+	}
+
+	BOOL isPushStack(std::string data)
+	{
+		if (data == "pushstack")
+		{
+			return true;
+		}
+		return false;
+	}
+
+	BOOL isIndexStack(std::string data)
+	{
+		if (data == "indexstack")
+		{
+			return true;
+		}
+		return false;
+	}
+
+	BOOL isFinishEarly(std::string data)
+	{
+		if (data == "@FINISH")
+		{
+			return true;
+		}
+		return false;
+	}
+
+	BOOL isForLoop(std::string data)
+	{
+		if (data[0] == 'f' && data[1] == 'o' && data[2] == 'r')
+		{
+			return true;
+		}
+		return false;
+	}
+	BOOL isEndLoop(std::string data)
+	{
+		if (data[0] == 'e' && data[1] == 'n' && data[2] == 'd' &&
+			data[3] == 'l' && data[4] == 'o' && data[5] == 'o' && data[6] == 'p')
 		{
 			return true;
 		}
@@ -486,28 +649,110 @@ namespace miniLexer
 		{
 			return typeSet::COMMENT;
 		}
+
+		if (isNewStack(x))
+		{
+			return typeSet::NEWSTACK;
+		}
+		if (last_type == typeSet::NEWSTACK)
+		{
+			return typeSet::NEWSTACKNAME;
+		}
 		
+		if (isPushStack(x))
+		{
+			return typeSet::PUSHSTACK;
+		}
+		if (last_type == typeSet::PUSHSTACK)
+		{
+			if (stack.userStackStack.isStack(x))
+			{
+				return typeSet::PUSHSTACKNAME;
+			}
+			else
+			{
+				//std::cout << "ret string on push" << std::endl;
+				return typeSet::STRING;
+			}
+			
+		}
+		if (last_type == typeSet::PUSHSTACKNAME)
+		{
+			return typeSet::PUSHSTACKVALUE;
+		}
+
+		if (isIndexStack(x))
+		{
+			return typeSet::INDEXSTACK;
+		}
+		if (last_type == typeSet::INDEXSTACK)
+		{
+			return typeSet::INDEXSTACKNAME;
+		}
+		if (last_type == typeSet::INDEXSTACKNAME)
+		{
+			return typeSet::INDEXSTACKAT;
+		}
+
+		if (isForLoop(x))
+		{
+			return typeSet::STARTFOR;
+		}
+		if (isEndLoop(x))
+		{
+			return typeSet::ENDFOR;
+		}
+
+		if (isFinishEarly(x))
+		{
+			return typeSet::FINISHEARLY;
+		}
 		return typeSet::NIL;
 	}
 }
 void gloneb_vm(const char* code, Stack& stack)
 {
+	if (stack.finishEarly)
+	{
+		return;
+	}
 	if (stack.functionWriter)
 	{
 		if (strcmp(code, "closefunction") != 0)
 		{
-			//std::cout << "function push\n";
 			stack.functionsCode.push_back(code);
 		}
 		else
 		{
-			//std::cout << "function end\n";
 			stack.uKeycallStack.pop(stack.functionWriterName, stack.functionsCode);
 			stack.functionWriterName = "";
 			stack.functionsCode.clear();
-
-
 			stack.functionWriter = false;
+		}
+		return;
+	}
+	if (stack.loopWriter)
+	{
+		if (miniLexer::isEndLoop(code))
+		{
+			stack.loopWriter = false;
+			for (long long int lop = 0; lop < stack.toLoopNum; lop++)
+			{
+				for (std::string co : stack.loopCode)
+				{
+					std::string tcode = "var idx " + std::to_string(lop);
+					gloneb_vm(tcode.c_str(), stack);
+					gloneb_vm(co.c_str(), stack);
+				}
+			}
+			stack.loopCode.clear();
+			stack.loopWriter = false;
+			stack.runLoop = false;
+			stack.toLoopNum = 0;
+		}
+		else
+		{
+			stack.loopCode.push_back(code);
 		}
 		return;
 	}
@@ -581,6 +826,7 @@ void gloneb_vm(const char* code, Stack& stack)
 		return;
 	}
 
+	//std::cout << "running code: " << code << std::endl;
 	for (int type = types.size() - 1; type > -1; type--)
 	{
 		if (skipnext)
@@ -614,15 +860,24 @@ void gloneb_vm(const char* code, Stack& stack)
 			uKeycall::execute(stack, stack.gettop());
 			break;
 		case typeSet::ADD:
-			if (types[type - 1] == typeSet::STRING || types[type + 1] == typeSet::STRING)
+			//if (types[type - 1] == typeSet::STRING || types[type + 1] == typeSet::STRING)
+			//{
+			//	stack.pop(keys[type - 1] + ' ' + (std::string)stack.gettop());
+			//}
+			//else
+			//{
+			//	//std::cout << "Adding: " << (keys[type - 1]);
+			//	//std::cout << " + " << (stack.gettop()) << std::endl;
+			//	stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
+			//}
+			if (types[type - 1] == typeSet::ODOUBLE || types[type + 1] == typeSet::ODOUBLE ||
+				types[type - 1] == typeSet::INTEGER || types[type + 1] == typeSet::INTEGER)
 			{
-				stack.pop(keys[type - 1] + ' ' + (std::string)stack.gettop());
+				stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
 			}
 			else
 			{
-				//std::cout << "Adding: " << (keys[type - 1]);
-				//std::cout << " + " << (stack.gettop()) << std::endl;
-				stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
+				stack.pop(keys[type - 1] + (std::string)stack.gettop());
 			}
 			skipnext = true;
 			break;
@@ -718,7 +973,60 @@ void gloneb_vm(const char* code, Stack& stack)
 			stack.functionWriter = true;
 			stack.functionWriterName = stack.gettop();
 			break;
-		
+		case typeSet::NEWSTACKNAME:
+			stack.pop(keys[type]);
+			break;
+		case typeSet::PUSHSTACKNAME:
+			stack.pop(keys[type]);
+			break;
+		case typeSet::PUSHSTACKVALUE:
+			stack.pop(keys[type]);
+			break;
+		case typeSet::INDEXSTACKNAME:
+			stack.pop(keys[type]);
+			break;
+		case typeSet::INDEXSTACKAT:
+			stack.pop(keys[type]);
+			break;
+		case typeSet::NEWSTACK:
+			//std::cout << "newstack: " << stack.gettop() << std::endl;
+			stack.userStackStack.newStack(stack.gettop());
+			break;
+		case typeSet::PUSHSTACK:
+			if (stack.userStackStack.isStack(stack.gettop()))
+			{
+				//std::cout << "pushstack: " << stack.gettop();
+				// std::cout << " | " << stack.stack[stack.top - 1] << std::endl;
+				stack.userStackStack.pushStack(stack.gettop(), stack.stack[stack.top - 1]);
+			}
+			else
+			{
+				std::cout << "No such stack called " << stack.gettop() << std::endl;
+			}
+			break;
+		case typeSet::INDEXSTACK:
+			if (stack.userStackStack.isStack(stack.gettop()))
+			{
+				stack.pop(stack.userStackStack.indexStack(stack.gettop(), stack.stack[stack.top - 1]));
+			}
+			else
+			{
+				std::cout << "No such stack called " << stack.gettop() << std::endl;
+			}
+			break;
+		case typeSet::STARTFOR:
+			stack.loopWriter = true;
+			stack.toLoopNum = std::stol(stack.gettop());
+			break;
+		case typeSet::ENDFOR:
+			stack.loopWriter = false;
+			stack.runLoop = true;
+			break;
+		case typeSet::FINISHEARLY:
+			//std::cout << "finish early" << std::endl;
+			stack.finishEarly = true;
+			return;
+			break;
 		//case typeSet::VARREF:
 		//	stack.pop(stack.variableStack.retValue(keys[type]));
 		}
