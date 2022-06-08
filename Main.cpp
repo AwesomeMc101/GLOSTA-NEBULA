@@ -7,25 +7,6 @@ print "true"
 endif
 var fal 69
 
-
-Current Syntax Supports:
-
-var kal = 5
-print kal * 7
-
-if kal == 5
-print "kal is 5"
-endif
-if kal != 6
-print "kal is not 6"
-endif
-
-function "printhal"
-print "hallo"
-closefunction
-
-printhal
-
 */
 #include <iostream>
 #include <vector>
@@ -33,7 +14,7 @@ printhal
 #include <sstream>
 #include <fstream>
 
-#include "virtualmachine.h"
+#include "nebula.h"
 
 namespace lineBreak
 {
@@ -71,6 +52,13 @@ void GLOSTA_LOADFILE(Stack& stack)
         while (getline(myfile, line))
         {
             //code += line;
+            if (stack.finishEarly)
+            {
+                printf("finish early\n");
+                stack.finishEarly = false;
+                glosta_gc::collectStatementGarbage(stack);
+                return;
+            }
             gloneb_vm(line.c_str(), stack);
         }
 
@@ -81,6 +69,8 @@ void GLOSTA_LOADFILE(Stack& stack)
 
 int main()
 {
+    srand(time(0));
+
     /*Syntax is like this lol:
     
     print 8 + 9
@@ -107,6 +97,12 @@ int main()
         for (std::string line : lines)
         {
             //std::cout << "line: " << line;
+            if (stack.finishEarly)
+            {
+                glosta_gc::collectStatementGarbage(stack);
+                stack.finishEarly = false;
+                break;
+            }
             gloneb_vm(line.c_str(), stack);
             std::cout << std::endl;
         }
