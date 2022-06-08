@@ -1,0 +1,14 @@
+var toset 0
+
+print "Type a number"
+getinput toset
+
+if (toset % 2) == 0
+print "Even"
+endif
+
+if (toset % 2) != 0
+print "Odd"
+endif
+
+$$ Displaying the new modulo operation and the quick scopes ()
