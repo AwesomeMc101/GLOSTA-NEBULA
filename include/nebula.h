@@ -70,12 +70,38 @@ namespace Variables
 	};
 }
 
+namespace userKeycall
+{
+	class uKeycallStack
+	{
+	public:
+		std::map<std::string, std::vector<std::string>> keycalls{};
+
+		void pop(std::string name, std::vector<std::string> code)
+		{
+			keycalls[name] = code;	
+		}
+		bool isuKeycall(std::string name)
+		{
+			if (keycalls.find(name) != keycalls.end()) {
+				return true;
+			}
+			return false;
+		}
+		std::vector<std::string> returnCode(std::string name)
+		{
+			return keycalls[name];
+		}
+	};
+}
+
 class Stack
 {
 public:
 	std::vector<std::string> stack;
 	int top = -1;
 	Variables::varStack variableStack;
+	userKeycall::uKeycallStack uKeycallStack;
 
 	void pop(std::string arg)
 	{
@@ -87,12 +113,19 @@ public:
 	{
 		return stack[top];
 	}
+
+	bool ifWrong = false;
+
+	bool functionWriter = false;
+	std::string functionWriterName = "";
+	std::vector<std::string> functionsCode;
 };
 
 typedef enum TYPES
 {
 	NIL,
 	KEYCALL,
+	UKEYCALL,
 	STRING,
 	ODOUBLE,
 	INTEGER,
@@ -108,8 +141,13 @@ typedef enum TYPES
 	DEQUAL,
 	UEQUAL,
 	OPENIF,
-	CLOSEIF
+	CLOSEIF,
+	OPENFUNCTION,
+	CLOSEFUNCTION
 } typeSet;
+
+
+void gloneb_vm(const char* code, Stack& stack);
 
 namespace keycall
 {
@@ -124,6 +162,18 @@ namespace keycall
 		if (key == "print")
 		{
 			print(arg);
+		}
+	}
+}
+
+namespace uKeycall
+{
+	void execute(Stack& stack, std::string name)
+	{
+		std::vector<std::string> code = stack.uKeycallStack.returnCode(name);
+		for (std::string co : code)
+		{
+			gloneb_vm(co.c_str(), stack);
 		}
 	}
 }
@@ -171,6 +221,20 @@ namespace miniLexer
 		}
 		return 0;
 	}
+
+	BOOL isSwitchFunction(std::string x)
+	{
+		if (x == "function")
+		{
+			return 1;
+		}
+		else if (x == "closefunction")
+		{
+			return 2;
+		}
+		return 0;
+	}
+
 	BOOL isNumber(std::string data)
 	{
 		//std::cout << "Passed Data to isNum: " << data << std::endl;
@@ -218,6 +282,15 @@ namespace miniLexer
 	BOOL isVarDef(std::string data)
 	{
 		if (data[0] == 'v' && data[1] == 'a' && data[2] == 'r')
+		{
+			return true;
+		}
+		return false;
+	}
+
+	BOOL isUKeycall(Stack stack, std::string data)
+	{
+		if (stack.uKeycallStack.isuKeycall(data))
 		{
 			return true;
 		}
@@ -275,6 +348,10 @@ namespace miniLexer
 		{
 			return typeSet::KEYCALL;
 		}
+		if (isUKeycall(stack, x))
+		{
+			return typeSet::UKEYCALL;
+		}
 		if (isSwitchIf(x))
 		{
 			switch (isSwitchIf(x))
@@ -284,6 +361,18 @@ namespace miniLexer
 				break;
 			case 2:
 				return typeSet::CLOSEIF;
+				break;
+			}
+		}
+		if (isSwitchFunction(x))
+		{
+			switch (isSwitchFunction(x))
+			{
+			case 1:
+				return typeSet::OPENFUNCTION;
+				break;
+			case 2:
+				return typeSet::CLOSEFUNCTION;
 				break;
 			}
 		}
@@ -322,9 +411,28 @@ namespace miniLexer
 		return typeSet::NIL;
 	}
 }
-
 void gloneb_vm(const char* code, Stack& stack)
 {
+	if (stack.functionWriter)
+	{
+		if (strcmp(code, "closefunction") != 0)
+		{
+			//std::cout << "function push\n";
+			stack.functionsCode.push_back(code);
+		}
+		else
+		{
+			//std::cout << "function end\n";
+			stack.uKeycallStack.pop(stack.functionWriterName, stack.functionsCode);
+			stack.functionWriterName = "";
+			stack.functionsCode.clear();
+
+
+			stack.functionWriter = false;
+		}
+		return;
+	}
+	const char* holster = code;
 	//std::cout << "code: " << code << std::endl;
 	std::vector<std::string> keys;
 	std::vector<typeSet> types;
@@ -375,6 +483,18 @@ void gloneb_vm(const char* code, Stack& stack)
 	}
 
 	bool skipnext = false;
+	if (stack.ifWrong)
+	{
+		for (int type = types.size() - 1; type > -1; type--)
+		{
+			if (types[type] == typeSet::CLOSEIF)
+			{
+				stack.ifWrong = false;
+			}
+		}
+		return;
+	}
+
 	for (int type = types.size() - 1; type > -1; type--)
 	{
 		if (skipnext)
@@ -382,6 +502,7 @@ void gloneb_vm(const char* code, Stack& stack)
 			skipnext = false;
 			continue;
 		}
+		
 		//std::cout << "OP_" << types[type];
 		switch (types[type])
 		{
@@ -401,6 +522,10 @@ void gloneb_vm(const char* code, Stack& stack)
 			//std::cout << "keycall: ";
 			//std::cout << keys[type] << " | " << stack.gettop();
 			keycall::keycall(keys[type], (char*)stack.gettop().c_str(), stack);
+			break;
+		case typeSet::UKEYCALL:
+			//std::cout << "ukeycall\n";
+			uKeycall::execute(stack, stack.gettop());
 			break;
 		case typeSet::ADD:
 			if (types[type - 1] == typeSet::STRING)
@@ -436,6 +561,48 @@ void gloneb_vm(const char* code, Stack& stack)
 		case typeSet::VARNAME:
 			stack.variableStack.pop(keys[type].c_str(), (char*)stack.gettop().c_str());
 			break;
+		case typeSet::DEQUAL:
+			if (stack.gettop() == keys[type - 1])
+			{
+				skipnext = true;
+				stack.pop("true");
+			}
+			else
+			{
+				skipnext = true;
+				stack.pop("false");
+			}
+			break;
+		case typeSet::UEQUAL:
+			if (stack.gettop() == keys[type - 1])
+			{
+				skipnext = true;
+				stack.pop("false");
+			}
+			else
+			{
+				skipnext = true;
+				stack.pop("true");
+			}
+			break;
+		case typeSet::OPENIF:
+			//std::cout << "\nOpenif with stacktop: " << stack.gettop() << std::endl;
+			if (stack.gettop() == "true")
+			{
+				//run
+			}
+			else
+			{
+				//dont run
+				std::cout << "set wrong" << std::endl;
+				stack.ifWrong = true;
+			}
+			break;
+		case typeSet::OPENFUNCTION:
+			stack.functionWriter = true;
+			stack.functionWriterName = stack.gettop();
+			break;
+		
 		//case typeSet::VARREF:
 		//	stack.pop(stack.variableStack.retValue(keys[type]));
 		}
