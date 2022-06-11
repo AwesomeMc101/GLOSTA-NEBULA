@@ -14,7 +14,7 @@ var fal 69
 #include <sstream>
 #include <fstream>
 
-#include "nebula.h"
+#include "virtualmachine.h"
 
 namespace lineBreak
 {
@@ -34,11 +34,11 @@ namespace lineBreak
 void GLOSTA_LOADFILE(Stack& stack)
 {
     //runfile(hello.txt)
-    std::cout << "Enter the filename here:" << std::endl;
+    std::cout << "\nEnter the filename here:" << std::endl;
     std::string file;
     std::getline(std::cin, file);
     // std::cout << "FILE: " << file;
-    std::string line;
+    std::string linex;
     std::ifstream myfile(file);
     if (!myfile.is_open())
     {
@@ -49,18 +49,45 @@ void GLOSTA_LOADFILE(Stack& stack)
     {
         std::cout << "\n\n";
         std::string code = "";
-        while (getline(myfile, line))
+        std::vector<std::string> lines;
+        while (getline(myfile, linex))
         {
             //code += line;
             if (stack.finishEarly)
             {
-                printf("finish early\n");
+               // printf("finish early\n");
                 stack.finishEarly = false;
                 glosta_gc::collectStatementGarbage(stack);
                 return;
             }
-            gloneb_vm(line.c_str(), stack);
+            lines.push_back(linex);
+            //gloneb_vm(line.c_str(), stack, lineinfo);
+           
         }
+        for (int i = 0; i < lines.size(); i++)
+        {
+            std::string line = lines[i];
+            //std::cout << "line: " << line;
+            if (stack.finishEarly)
+            {
+                printf("finish early\n");
+                glosta_gc::collectStatementGarbage(stack);
+                stack.finishEarly = false;
+                break;
+            }
+            if (stack.gotoLine > -1)
+            {
+               // std::cout << "gotoline " << stack.gotoLine;
+                i = (stack.gotoLine - 1);
+                stack.gotoLine = -1;
+            }
+            else
+            {
+                gloneb_vm(line.c_str(), stack, i);
+            }
+
+        }
+        std::cout << std::endl;
 
         myfile.close();
     }
@@ -82,8 +109,11 @@ int main()
     
     */
     Stack stack;
+    const char* tcode = "if 1 == 1\nendif";
+    //gloneb_vm(tcode, stack);
     while (1)
     {
+
         std::string code;
         std::getline(std::cin, code);
 
@@ -94,16 +124,34 @@ int main()
         }
 
         std::vector<std::string> lines = lineBreak::lineScan(code);
-        for (std::string line : lines)
+        for (int i = 0; i < lines.size(); i++)
         {
+            std::string line = lines[i];
             //std::cout << "line: " << line;
             if (stack.finishEarly)
             {
+                printf("finish early\n");
                 glosta_gc::collectStatementGarbage(stack);
                 stack.finishEarly = false;
                 break;
             }
-            gloneb_vm(line.c_str(), stack);
+            if (stack.gotoLine > -1)
+            {
+                //std::cout << "gotoline " << stack.gotoLine;
+                i = (stack.gotoLine - 1);
+                stack.gotoLine = -1;
+            }
+            else
+            {
+                try
+                {
+                    gloneb_vm(line.c_str(), stack, i);
+                }
+                catch (std::exception er)
+                {
+                    std::cout << "Error [LINE " << i << "] | " << er.what() << std::endl;
+                }
+            }
             std::cout << std::endl;
         }
     }
