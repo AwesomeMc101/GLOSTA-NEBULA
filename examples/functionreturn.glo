@@ -1,0 +1,17 @@
+$$wielding the GLOSTA Stack and Function Return
+
+
+@ENABLEGSTACKACCESS
+
+function grape
+8 + 4
+closefunction
+
+
+$$simple function returns
+var lemons grape
+print "Lemons: " + lemons
+
+$$using stack access to securely set values
+var newlemons indexgstack "top"
+print "new lemons: " + newlemons
