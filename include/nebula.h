@@ -74,6 +74,16 @@ namespace UserStack
 			}
 			return "NO_SUCH_STACK";
 		}
+		std::vector<std::string> itemsReturner(std::string name)
+		{
+			for (int i = 0; i < uStack.size(); i++)
+			{
+				if (uStack[i].name == name)
+				{
+					return uStack[i].items;
+				}
+			}
+		}
 		bool isStack(std::string name)
 		{
 			//std::cout << "Passed stack name: " << name << std::endl;
@@ -207,6 +217,14 @@ public:
 	std::vector<std::string> loopCode;
 	bool runLoop = false;
 
+	/* 1 = For, 2 = While*/
+	int loopType = 0; 
+
+	bool whileWrong = false;
+	
+	int gotoLine = -1;
+	int startLine = -1;
+
 	bool finishEarly = false;
 };
 
@@ -228,6 +246,7 @@ typedef enum TYPES
 	MUL,
 	DIV,
 	POW,
+	MOD,
 	DEQUAL,
 	UEQUAL,
 	GREATERTHAN,
@@ -247,18 +266,48 @@ typedef enum TYPES
 	INDEXSTACK,
 	INDEXSTACKNAME,
 	INDEXSTACKAT,
+	USERSTACKREF,
 	/* ---- */
 	STARTFOR,
 	ENDFOR,
+	STARTWHILE,
+	ENDWHILE,
 	FINISHEARLY,
+	OPENQUICKSCOPE, //(
+	CLOSEQUICKSCOPE,
+	GOTOCALL,
+	GSTACKACCESS
 } typeSet;
 
+std::string properly_concat(std::string a, std::string b)
+{
+	std::string newl = a;
+	newl.append(b);
+	return newl;
+}
 
-void gloneb_vm(const char* code, Stack& stack);
+void gloneb_vm(const char* code, Stack& stack, int lineinfo);
+
+namespace glosta_gc
+{
+	void collectStatementGarbage(Stack& stack)
+	{
+		stack.finishEarly = false;
+		stack.functionWriter = false;
+		stack.functionsCode.clear();
+		stack.functionWriterName.clear();
+		stack.loopCode.clear();
+		stack.loopWriter = false;
+		stack.runLoop = false;
+		stack.toLoopNum = 0;
+		stack.ifWrong = false;
+	}
+}
+
 
 namespace keycall
 {
-	std::vector<const char*> keycalls = { "print", "getinput", "rand"};
+	std::vector<const char*> keycalls = { "print", "getinput", "rand", "import", "strlen", "indexstring" };
 	void print(const char* key)
 	{
 		std::cout << "\nPRINTING: " << key << std::endl;
@@ -268,7 +317,7 @@ namespace keycall
 	{
 		std::string towrite = "";
 		std::getline(std::cin, towrite);
-		
+
 		if (stack.variableStack.checkIsVar(stack.stack[stack.top - 1].c_str()))
 		{
 			//std::cout << "Variable found" << std::endl;
@@ -289,6 +338,140 @@ namespace keycall
 		stack.pop(std::to_string(rat));
 	}
 
+	void importf(char* arg, Stack& stack)
+	{
+		//NOT GLOSTA_LOADFILE PASTE :D:D:D:D:D: :(:(:(:(
+		std::string linex;
+		std::ifstream myfile((arg));  // I hate automatic type conversions :(
+		if (!myfile.is_open())
+		{
+			std::cout << "File could not be opened!" << std::endl;
+			return;
+		}
+		std::vector<std::string> lines;
+		while (getline(myfile, linex))
+		{
+			//code += line;
+			if (stack.finishEarly)
+			{
+				// printf("finish early\n");
+				stack.finishEarly = false;
+				glosta_gc::collectStatementGarbage(stack);
+				return;
+			}
+			lines.push_back(linex);
+			//gloneb_vm(line.c_str(), stack, lineinfo);
+
+		}
+		for (int i = 0; i < lines.size(); i++)
+		{
+			std::string line = lines[i];
+			//std::cout << "line: " << line;
+			if (stack.finishEarly)
+			{
+				printf("finish early\n");
+				glosta_gc::collectStatementGarbage(stack);
+				stack.finishEarly = false;
+				break;
+			}
+			if (stack.gotoLine > -1)
+			{
+				// std::cout << "gotoline " << stack.gotoLine;
+				i = (stack.gotoLine - 1);
+				stack.gotoLine = -1;
+			}
+			else
+			{
+				gloneb_vm(line.c_str(), stack, i);
+			}
+
+		}
+		std::cout << std::endl;
+	}
+
+	void printgstack(Stack stack)
+	{
+		if (stack.stack.size() == 0)
+		{
+			return;
+		}
+		for (int i = 0; i < stack.stack.size(); i++)
+		{
+			std::cout << "Stack [" << i << "] | Value: " << stack.stack[i] << std::endl;
+		}
+	}
+
+	//write gstack functions
+
+	void indexgstack(Stack& stack, char* arg)
+	{
+		std::string idx = "";
+		if (strcmp(arg,"top")==0 || strcmp(arg,"size") == 0)
+		{
+			idx = std::to_string(stack.top - 1); //top will actually be "top" lol
+		}
+		else if (strlen(arg) < 10)
+		{
+			idx = arg;
+		}
+		else
+		{
+			for (int h = 0; h < strlen(arg); h++)
+			{
+				idx += (arg[h] - '0');
+			}
+		}
+		try
+		{
+			stack.pop(stack.stack[std::stoi(idx)]);
+		}
+		catch (std::exception er)
+		{
+			stack.pop("gStack Index Error");
+		}
+	}
+
+	void cleargstack(Stack& stack)
+	{
+		stack.stack.clear();
+	}
+
+	void setgindex(Stack& stack, char* arg)
+	{
+		//setgindex 5 "kys men"
+		std::string idx = "";
+		if (strcmp(arg, "top") == 0 || strcmp(arg, "size") == 0)
+		{
+			idx = stack.top - 1;
+		}
+		else if (strlen(arg) < 10)
+		{
+			idx = arg;
+		}
+		else
+		{
+			for (int h = 0; h < strlen(arg); h++)
+			{
+				idx += (arg[h] - '0');
+			}
+		}
+
+		try
+		{
+			stack.stack[std::stoi(idx)] = stack.stack[stack.top-1];
+		}
+		catch (std::exception er)
+		{
+			stack.pop("Set GLOSTA Index error");
+		}
+	}
+
+	void strlenf(Stack& stack, char* arg)
+	{
+		std::string a = arg;
+		stack.pop(std::to_string(strlen(arg)));
+	}
+
 	void keycall(std::string key, char* arg, Stack& stack)
 	{
 		if (key == "print")
@@ -303,20 +486,59 @@ namespace keycall
 		{
 			random(arg, stack);
 		}
+		if (key == "import")
+		{
+			importf(arg, stack);
+		}
+		if (key == "strlen")
+		{
+			strlenf(stack, arg);
+		}
+
+		//these will only work if the gstack is enabled
+		if (key == "printgstack")
+		{
+			printgstack(stack);
+		}
+		if (key == "indexgstack")
+		{
+			indexgstack(stack, arg);
+		}
+		if (key == "cleargstack")
+		{
+			cleargstack(stack);
+		}
+		if (key == "setgindex")
+		{
+			setgindex(stack, arg);
+		}
 	}
+
+	void enablegstack()
+	{
+		keycalls.push_back("printgstack");
+		keycalls.push_back("indexgstack");
+		keycalls.push_back("cleargstack");
+		keycalls.push_back("pushgstack");
+		keycalls.push_back("setgindex");
+	}
+
 }
 
 namespace uKeycall
 {
 	void execute(Stack& stack, std::string name)
 	{
+		//std::cout << "Executing: " << name << std::endl;
 		std::vector<std::string> code = stack.uKeycallStack.returnCode(name);
 
 		Stack tstack;
-
+		int lineinfo = 0;
 		for (std::string co : code)
 		{
-			gloneb_vm(co.c_str(), stack);
+			//std::cout << "KEYCALL EXECUTE: " << co.c_str() << std::endl;
+			gloneb_vm(co.c_str(), stack, lineinfo);
+			lineinfo++;
 		}
 	}
 }
@@ -330,22 +552,6 @@ namespace evalIf
 			return true;
 		}
 		return false;
-	}
-}
-
-namespace glosta_gc
-{
-	void collectStatementGarbage(Stack& stack)
-	{
-		stack.finishEarly = false;
-		stack.functionWriter = false;
-		stack.functionsCode.clear();
-		stack.functionWriterName.clear();
-		stack.loopCode.clear();
-		stack.loopWriter = false;
-		stack.runLoop = false;
-		stack.toLoopNum = 0;
-		stack.ifWrong = false;
 	}
 }
 
@@ -368,6 +574,11 @@ namespace miniLexer
 		return stack.variableStack.checkIsVar(x.c_str());
 	}
 
+	BOOL isUserStack(std::string x, Stack stack)
+	{
+		return stack.userStackStack.isStack(x);
+	}
+
 	BOOL isSwitchIf(std::string x)
 	{
 		if (x == "if")
@@ -379,6 +590,15 @@ namespace miniLexer
 			return 2;
 		}
 		return 0;
+	}
+
+	BOOL isGoto(std::string x)
+	{
+		if (x[0] == 'g' && x[1] == 'o' && x[2] == 't' && x[3] == 'o')
+		{
+			return true;
+		}
+		return false;
 	}
 
 	BOOL isSwitchFunction(std::string x)
@@ -394,6 +614,19 @@ namespace miniLexer
 		return 0;
 	}
 
+	BOOL switchQuickScope(std::string x)
+	{
+		if (x.find("(") != std::string::npos)
+		{
+			return 1;
+		}
+		if (x.find(")") != std::string::npos)
+		{
+			return 2;
+		}
+		return false;
+	}
+
 	BOOL isNumber(std::string data)
 	{
 		//std::cout << "Passed Data to isNum: " << data << std::endl;
@@ -401,7 +634,7 @@ namespace miniLexer
 			if (data[i] != '0' && data[i] != '1' && data[i] != '2' &&
 				data[i] != '3' && data[i] != '4' && data[i] != '5' &&
 				data[i] != '6' && data[i] != '7' && data[i] != '8' &&
-				data[i] != '9')
+				data[i] != '9' && data[i] != '.')
 			{
 				return 0;
 			}
@@ -501,6 +734,15 @@ namespace miniLexer
 		return false;
 	}
 
+	BOOL isEnableStack(std::string data)
+	{
+		if (data == "@ENABLEGSTACKACCESS")
+		{
+			return true;
+		}
+		return false;
+	}
+
 	BOOL isForLoop(std::string data)
 	{
 		if (data[0] == 'f' && data[1] == 'o' && data[2] == 'r')
@@ -509,6 +751,16 @@ namespace miniLexer
 		}
 		return false;
 	}
+	BOOL isWhileLoop(std::string data)
+	{
+		if (data[0] == 'w' && data[1] == 'h' && data[2] == 'i' &&
+			data[3] == 'l' && data[4] == 'e')
+		{
+			return true;
+		}
+		return false;
+	}
+
 	BOOL isEndLoop(std::string data)
 	{
 		if (data[0] == 'e' && data[1] == 'n' && data[2] == 'd' &&
@@ -542,6 +794,10 @@ namespace miniLexer
 		{
 			return typeSet::POW;
 		}
+		if (data[0] == '%')
+		{
+			return typeSet::MOD;
+		}
 		if (data[0] == '=' && data[1] == '=')
 		{
 			return typeSet::DEQUAL;
@@ -561,8 +817,22 @@ namespace miniLexer
 		return typeSet::NIL;
 	}
 
+	typeSet returnPossibleVar(std::string x)
+	{
+		if (isDouble(x))
+		{
+			return typeSet::ODOUBLE;
+		}
+		if (isNumber(x))
+		{
+			return typeSet::INTEGER;
+		}
+		return typeSet::STRING;
+	}
+
 	typeSet returnType(std::string& x, std::vector<typeSet> types, Stack stack)
 	{
+		//std::cout << "Passed: " << x << std::endl;
 		typeSet last_type = typeSet::NIL;
 		if (types.size() > 0)
 		{
@@ -585,6 +855,10 @@ namespace miniLexer
 		{
 			return typeSet::UKEYCALL;
 		}
+		if (isGoto(x))
+		{
+			return typeSet::GOTOCALL;
+		}
 		if (isSwitchIf(x))
 		{
 			switch (isSwitchIf(x))
@@ -596,6 +870,10 @@ namespace miniLexer
 				return typeSet::CLOSEIF;
 				break;
 			}
+		}
+		if (isEnableStack(x))
+		{
+			return typeSet::GSTACKACCESS;
 		}
 		if (isSwitchFunction(x))
 		{
@@ -694,12 +972,25 @@ namespace miniLexer
 			return typeSet::INDEXSTACKAT;
 		}
 
+		if (isUserStack(x, stack))
+		{
+			return typeSet::USERSTACKREF;
+		}
+
 		if (isForLoop(x))
 		{
 			return typeSet::STARTFOR;
 		}
+		if (isWhileLoop(x))
+		{
+			return typeSet::STARTWHILE;
+		}
 		if (isEndLoop(x))
 		{
+			if (stack.loopType == 2)
+			{
+				return typeSet::ENDWHILE;
+			}
 			return typeSet::ENDFOR;
 		}
 
@@ -710,26 +1001,49 @@ namespace miniLexer
 		return typeSet::NIL;
 	}
 }
-void gloneb_vm(const char* code, Stack& stack)
+void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 {
 	if (stack.finishEarly)
 	{
+		return;
+	}
+	if (stack.ifWrong)
+	{
+		if (miniLexer::isSwitchIf(code) == 2)
+		{
+			//std::cout << "change ifwrong";
+			stack.ifWrong = false;
+			//std::cout << "changed ifwrong";
+		}
+		//std::cout << "if skip";
+		return;
+	}
+	if (stack.whileWrong)
+	{
+		if (miniLexer::isEndLoop(code))
+		{
+			stack.gotoLine = -1;
+			stack.whileWrong = false;
+		}
 		return;
 	}
 	if (stack.functionWriter)
 	{
 		if (strcmp(code, "closefunction") != 0)
 		{
+			//std::cout << "Function Writer: " << code << std::endl;
 			stack.functionsCode.push_back(code);
+			return;
 		}
 		else
 		{
+			//std::cout << "Function Writer End Size: " << stack.functionsCode.size() << std::endl;
+			//std::cout << "Function Writer End Name: " << stack.functionWriterName << std::endl;
 			stack.uKeycallStack.pop(stack.functionWriterName, stack.functionsCode);
 			stack.functionWriterName = "";
 			stack.functionsCode.clear();
 			stack.functionWriter = false;
 		}
-		return;
 	}
 	if (stack.loopWriter)
 	{
@@ -741,14 +1055,16 @@ void gloneb_vm(const char* code, Stack& stack)
 				for (std::string co : stack.loopCode)
 				{
 					std::string tcode = "var idx " + std::to_string(lop);
-					gloneb_vm(tcode.c_str(), stack);
-					gloneb_vm(co.c_str(), stack);
+					gloneb_vm(tcode.c_str(), stack, 0);
+					gloneb_vm(co.c_str(), stack, 0);
 				}
 			}
 			stack.loopCode.clear();
 			stack.loopWriter = false;
 			stack.runLoop = false;
 			stack.toLoopNum = 0;
+			stack.loopType = 0;
+			//maybe have a num like "loops running" to help with scoping
 		}
 		else
 		{
@@ -763,8 +1079,13 @@ void gloneb_vm(const char* code, Stack& stack)
 
 	char* token;
 	char* rest = (char*)code;
+
 	BOOL setToString = false;
 	int stringLoc;
+
+	BOOL setToQuick = false;
+	int quickLoc;
+
 	while ((token = strtok_s(rest, " ", &rest)))
 	{
 		//std::cout << "Token: " << token << std::endl;
@@ -778,6 +1099,27 @@ void gloneb_vm(const char* code, Stack& stack)
 			}
 			continue;
 		}
+		if (setToQuick)
+		{
+			keys[quickLoc] += " ";
+			keys[quickLoc] += token;
+			if (miniLexer::switchQuickScope(token) == 2)
+			{
+				keys[quickLoc].erase(std::remove(keys[quickLoc].begin(), keys[quickLoc].end(), '('), keys[quickLoc].end());
+				keys[quickLoc].erase(std::remove(keys[quickLoc].begin(), keys[quickLoc].end(), ')'), keys[quickLoc].end());
+				Stack tstack;
+				tstack.variableStack = stack.variableStack;
+				tstack.uKeycallStack = stack.uKeycallStack;
+				tstack.userStackStack = stack.userStackStack;
+				tstack.ifWrong = stack.ifWrong;
+				//std::cout << "executing: " << keys[quickLoc].c_str();
+				gloneb_vm(keys[quickLoc].c_str(), tstack, 0);
+				keys[quickLoc] = tstack.gettop();
+				//std::cout << "new quick: " << keys[quickLoc] << std::endl;
+				setToQuick = false;
+			}
+			continue;
+		}
 		if (miniLexer::isString(token))
 		{
 			if (miniLexer::isCloseString(token))
@@ -787,6 +1129,12 @@ void gloneb_vm(const char* code, Stack& stack)
 			}
 			setToString = true;
 			stringLoc = keys.size();
+			keys.push_back(token);
+		}
+		else if (miniLexer::switchQuickScope(token) == 1)
+		{
+			setToQuick = true;
+			quickLoc = keys.size();
 			keys.push_back(token);
 		}
 		else
@@ -802,8 +1150,18 @@ void gloneb_vm(const char* code, Stack& stack)
 		{
 			stack.pop(keys[i]);
 			keys[i] = stack.variableStack.retValue(keys[i]);
-			//std::cout << "new keys[i]: " << keys[i] << std::endl;
+			/*std::cout << "new keys[i]: " << keys[i] << std::endl;
+			std::cout << "would set: OP_" << miniLexer::returnPossibleVar(keys[i]) << std::endl;
+			type = miniLexer::returnPossibleVar(keys[i]);*/
 			
+			/*if (miniLexer::isNumber(keys[i]))
+			{
+				type = typeSet::ODOUBLE;
+			}
+			else
+			{
+				type = typeSet::STRING;
+			}*/
 			stack.pop(keys[i]);
 		}
 		if (type == typeSet::COMMENT)
@@ -814,19 +1172,22 @@ void gloneb_vm(const char* code, Stack& stack)
 	}
 
 	bool skipnext = false;
-	if (stack.ifWrong)
+	/*if (stack.ifWrong)
 	{
-		for (int type = types.size() - 1; type > -1; type--)
+		
+		for (int type = 0; type < types.size(); type++)
 		{
 			if (types[type] == typeSet::CLOSEIF)
 			{
 				stack.ifWrong = false;
+				std::cout << "changed ifwrong";
 			}
 		}
+		std::cout << "if skip";
 		return;
-	}
+	}*/
 
-	//std::cout << "running code: " << code << std::endl;
+	///std::cout << "running code: " << code << std::endl;
 	for (int type = types.size() - 1; type > -1; type--)
 	{
 		if (skipnext)
@@ -834,6 +1195,8 @@ void gloneb_vm(const char* code, Stack& stack)
 			skipnext = false;
 			continue;
 		}
+		
+		//std::cout << "OP_" << types[type];
 		
 		//std::cout << "OP_" << types[type];
 		switch (types[type])
@@ -857,7 +1220,7 @@ void gloneb_vm(const char* code, Stack& stack)
 			break;
 		case typeSet::UKEYCALL:
 			//std::cout << "ukeycall\n";
-			uKeycall::execute(stack, stack.gettop());
+			uKeycall::execute(stack, keys[type]);
 			break;
 		case typeSet::ADD:
 			//if (types[type - 1] == typeSet::STRING || types[type + 1] == typeSet::STRING)
@@ -870,13 +1233,35 @@ void gloneb_vm(const char* code, Stack& stack)
 			//	//std::cout << " + " << (stack.gettop()) << std::endl;
 			//	stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
 			//}
+			if (types[type - 1] == typeSet::VARREF || types[type + 1] == typeSet::VARREF)
+			{
+				if (miniLexer::isNumber(keys[type - 1]) && miniLexer::isNumber(stack.gettop()))
+				{
+					//std::cout << "ADD VARREF INT\n";
+					//std::cout << std::stod(keys[type - 1]) << " + " << std::stod(stack.gettop());
+					stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
+				}
+				else
+				{
+					//std::cout << "ADD VARREF STRING\n";
+					//std::cout << (keys[type - 1]) << " + " << (stack.gettop());
+					//stack.pop(keys[type - 1] + stack.gettop());
+					stack.pop(properly_concat(keys[type - 1], stack.gettop()));
+				}
+				skipnext = true;
+				break;
+			}
 			if (types[type - 1] == typeSet::ODOUBLE || types[type + 1] == typeSet::ODOUBLE ||
 				types[type - 1] == typeSet::INTEGER || types[type + 1] == typeSet::INTEGER)
 			{
+				//std::cout << "add normal ints";
+				//std::cout << std::stod(keys[type - 1]) << " + " << std::stod(stack.gettop());
 				stack.pop(std::to_string(std::stod(keys[type - 1]) + std::stod(stack.gettop())));
 			}
 			else
 			{
+				//std::cout << "add normal string";
+				//std::cout << (keys[type - 1]) << " + " << (stack.gettop());
 				stack.pop(keys[type - 1] + (std::string)stack.gettop());
 			}
 			skipnext = true;
@@ -901,6 +1286,12 @@ void gloneb_vm(const char* code, Stack& stack)
 			break;
 		case typeSet::POW: //how men
 			stack.pop(std::to_string(pow(std::stoi(keys[type - 1]) , std::stoi(stack.gettop()))));
+			skipnext = true;
+			break;
+		case typeSet::MOD: //how men
+			//std::cout << "Adding: " << std::stoi(keys[type - 1]);
+			//std::cout << " + " << std::stoi(stack.gettop()) << std::endl;
+			stack.pop(std::to_string(std::stoi(keys[type - 1]) % std::stoi(stack.gettop())));
 			skipnext = true;
 			break;
 		case typeSet::VARNAME:
@@ -931,8 +1322,8 @@ void gloneb_vm(const char* code, Stack& stack)
 			}
 			break;
 		case typeSet::GREATERTHAN:
-			//std::cout << "Checking if " + stack.gettop() + " > " << keys[type - 1];
-			if (keys[type - 1] > stack.gettop())
+			//std::cout << "Checking if " + keys[type - 1] + " > " << stack.gettop();
+			if (std::stod(keys[type - 1]) > std::stod(stack.gettop()))
 			{
 				skipnext = true;
 				stack.pop("true");
@@ -965,7 +1356,7 @@ void gloneb_vm(const char* code, Stack& stack)
 			else
 			{
 				//dont run
-				//std::cout << "set wrong" << std::endl;
+				std::cout << "set wrong" << std::endl;
 				stack.ifWrong = true;
 			}
 			break;
@@ -979,7 +1370,14 @@ void gloneb_vm(const char* code, Stack& stack)
 		case typeSet::PUSHSTACKNAME:
 			stack.pop(keys[type]);
 			break;
+		case typeSet::USERSTACKREF:
+			stack.pop(keys[type]);
+			break;
 		case typeSet::PUSHSTACKVALUE:
+			if (miniLexer::isUserStack(keys[type], stack))
+			{
+				stack.pop("SECOND_STACK_CALL");
+			}
 			stack.pop(keys[type]);
 			break;
 		case typeSet::INDEXSTACKNAME:
@@ -997,7 +1395,26 @@ void gloneb_vm(const char* code, Stack& stack)
 			{
 				//std::cout << "pushstack: " << stack.gettop();
 				// std::cout << " | " << stack.stack[stack.top - 1] << std::endl;
-				stack.userStackStack.pushStack(stack.gettop(), stack.stack[stack.top - 1]);
+				//stack.userStackStack.pushStack(stack.gettop(), stack.stack[stack.top - 1]);
+				keycall::printgstack(stack);
+				if (stack.stack[stack.top - 2] == "SECOND_STACK_CALL")
+				{
+					if (stack.userStackStack.isStack(stack.stack[stack.top - 1]))
+					{
+						for (int i = 0; i < stack.userStackStack.itemsReturner(stack.stack[stack.top-1]).size(); i++)
+						{
+							stack.userStackStack.pushStack(stack.gettop(), stack.userStackStack.indexStack(stack.stack[stack.top - 1], std::to_string(i)));
+						}
+					}
+					else
+					{
+						std::cout << "No such stack called " << stack.stack[stack.top - 1] << std::endl;
+					}
+				}
+				else
+				{
+					stack.userStackStack.pushStack(stack.gettop(), stack.stack[stack.top - 1]);
+				}
 			}
 			else
 			{
@@ -1016,16 +1433,42 @@ void gloneb_vm(const char* code, Stack& stack)
 			break;
 		case typeSet::STARTFOR:
 			stack.loopWriter = true;
+			stack.loopType = 1;
 			stack.toLoopNum = std::stol(stack.gettop());
 			break;
 		case typeSet::ENDFOR:
 			stack.loopWriter = false;
 			stack.runLoop = true;
 			break;
+		case typeSet::STARTWHILE:
+			if (stack.gettop() == "true")
+			{
+				//run
+				//std::cout << "start right" << std::endl;
+				stack.loopType = 2;
+				stack.startLine = lineinfo;
+			}
+			else
+			{
+				//dont run
+				//std::cout << "set wrong" << std::endl;
+				stack.whileWrong = true;
+				stack.startLine = -1;
+			}
+			break;
+		case typeSet::ENDWHILE:
+			//std::cout << "reset gotoline +" << stack.startLine << std::endl;
+			stack.gotoLine = stack.startLine;
+			break;
 		case typeSet::FINISHEARLY:
-			//std::cout << "finish early" << std::endl;
 			stack.finishEarly = true;
 			return;
+			break;
+		case typeSet::GOTOCALL:
+			stack.gotoLine = std::stoi(stack.gettop());
+			break;
+		case typeSet::GSTACKACCESS:
+			keycall::enablegstack();
 			break;
 		//case typeSet::VARREF:
 		//	stack.pop(stack.variableStack.retValue(keys[type]));
@@ -1035,3 +1478,4 @@ void gloneb_vm(const char* code, Stack& stack)
 		
 }
 
+//cant believe we're at nearly 1.5k!
