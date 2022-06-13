@@ -1,4 +1,4 @@
-var age = 0
+var age 0 $$ bruh i had an equals sign :(
 print "Type your age!"
 getinput age
 
