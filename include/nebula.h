@@ -84,6 +84,16 @@ namespace UserStack
 				}
 			}
 		}
+		int returnStackSize(std::string name)
+		{
+			for (int i = 0; i < uStack.size(); i++)
+			{
+				if (uStack[i].name == name)
+				{
+					return uStack[i].items.size();
+				}
+			}
+		}
 		bool isStack(std::string name)
 		{
 			//std::cout << "Passed stack name: " << name << std::endl;
@@ -99,6 +109,8 @@ namespace UserStack
 		}
 	};
 }
+
+
 
 namespace Variables
 {
@@ -161,6 +173,7 @@ namespace Variables
 	};
 }
 
+
 namespace userKeycall
 {
 	class uKeycallStack
@@ -186,6 +199,54 @@ namespace userKeycall
 	};
 }
 
+class Stack;
+
+namespace Classes {
+	class classType {
+	public:
+		std::string name;
+		std::vector<std::string> vars; //'hel' == class.hel
+	};
+	class classStack {
+	public:
+		std::vector<classType> classes;
+
+		void newClassType(std::string name, std::vector<std::string> lines)
+		{
+			classType cTy;
+			cTy.name = name;
+			for (std::string line : lines)
+			{
+				char* token;
+				char* rest = (char*)line.c_str();
+				std::vector<char*> tokens; //var || sexy 
+				while ((token = strtok_s(rest, " ", &rest)))
+				{
+					tokens.push_back(token);
+				}
+
+				cTy.vars.push_back(tokens[1]);
+			}
+		}
+
+		std::vector<std::string> newClassVar(const char* varName, std::string _classType)
+		{
+			for (classType claTyp : classes)
+			{
+				if (claTyp.name == _classType)
+				{
+					std::vector<std::string> toReturnVarNames;
+					for (std::string vtype : claTyp.vars)
+					{
+						toReturnVarNames.push_back((varName + '.' + vtype).c_str());
+					}
+				}
+			}
+		}
+	};
+
+}
+
 class Stack
 {
 public:
@@ -194,6 +255,7 @@ public:
 	Variables::varStack variableStack;
 	userKeycall::uKeycallStack uKeycallStack;
 	UserStack::userstackStack userStackStack;
+	Classes::classStack classStack;
 
 	void pop(std::string arg)
 	{
@@ -216,6 +278,10 @@ public:
 	long long int toLoopNum = 0;
 	std::vector<std::string> loopCode;
 	bool runLoop = false;
+
+	bool classWriter = false;
+	std::string classTypeName = "";
+	std::vector<std::string> classLines;
 
 	/* 1 = For, 2 = While*/
 	int loopType = 0; 
@@ -276,7 +342,12 @@ typedef enum TYPES
 	OPENQUICKSCOPE, //(
 	CLOSEQUICKSCOPE,
 	GOTOCALL,
-	GSTACKACCESS
+	GSTACKACCESS,
+	GSTACKTOPCALL,
+	/* ---- */
+	DEFCLASSTYPE,
+	ENDCLASSTYPE,
+	NEWCLASSVAR
 } typeSet;
 
 std::string properly_concat(std::string a, std::string b)
@@ -307,7 +378,7 @@ namespace glosta_gc
 
 namespace keycall
 {
-	std::vector<const char*> keycalls = { "print", "getinput", "rand", "import", "strlen", "indexstring" };
+	std::vector<const char*> keycalls = { "print", "getinput", "rand", "import", "sizeof", "indexstring"};
 	void print(const char* key)
 	{
 		std::cout << "\nPRINTING: " << key << std::endl;
@@ -466,13 +537,40 @@ namespace keycall
 		}
 	}
 
-	void strlenf(Stack& stack, char* arg)
+	void gstacktop(Stack& stack)
 	{
-		std::string a = arg;
-		stack.pop(std::to_string(strlen(arg)));
+		stack.pop(std::to_string(stack.top));
 	}
 
-	void keycall(std::string key, char* arg, Stack& stack)
+	void indexstringat(Stack& stack, char* arg, std::vector<typeSet> types, int type)
+	{
+		//indexstring "hello" 5
+		//int index = std::stoi(types[type + 1])
+		int idx = std::stoi(stack.stack[stack.top - 1]);
+		//std::cout << "indexstring " << arg << " " << idx << std::endl;
+		char indexed = arg[idx];
+		std::string result(1, indexed);
+		stack.pop((result));
+	}
+
+	void strlenf(Stack& stack, char* arg, std::vector<typeSet> types, int type)
+	{
+		std::string a = arg;
+		std::cout << "Type: OP_" << types[type + 1] << std::endl;
+		if (types[type + 1] == typeSet::USERSTACKREF)
+		{
+			if (stack.userStackStack.isStack(a))
+			{
+				stack.pop(std::to_string(stack.userStackStack.returnStackSize(a)));
+			}
+		}
+		else
+		{
+			stack.pop(std::to_string(strlen(arg)));
+		}
+	}
+
+	void keycall(std::string key, char* arg, Stack& stack, std::vector<typeSet> types, std::vector<std::string> keys, int type)
 	{
 		if (key == "print")
 		{
@@ -490,9 +588,13 @@ namespace keycall
 		{
 			importf(arg, stack);
 		}
-		if (key == "strlen")
+		if (key == "sizeof")
 		{
-			strlenf(stack, arg);
+			strlenf(stack, arg, types, type);
+		}
+		if (key == "indexstring")
+		{
+			indexstringat(stack, arg, types, type);
 		}
 
 		//these will only work if the gstack is enabled
@@ -512,6 +614,10 @@ namespace keycall
 		{
 			setgindex(stack, arg);
 		}
+		if (key == "gstacktop")
+		{
+			gstacktop(stack);
+		}
 	}
 
 	void enablegstack()
@@ -519,7 +625,7 @@ namespace keycall
 		keycalls.push_back("printgstack");
 		keycalls.push_back("indexgstack");
 		keycalls.push_back("cleargstack");
-		keycalls.push_back("pushgstack");
+		keycalls.push_back("gstacktop");
 		keycalls.push_back("setgindex");
 	}
 
@@ -613,6 +719,23 @@ namespace miniLexer
 		}
 		return 0;
 	}
+
+	BOOL isOpenClass(std::string x)
+	{
+		return (x[0] == 'd' && x[1] == 'e' && x[2] == 'f' &&
+			x[3] == 'c' && x[4] == 'l' && x[5] == 'a' && x[6] == 's' && x[7] == 's');
+	}
+	BOOL isEndClass(std::string x)
+	{
+		return (x[0] == 'e' && x[1] == 'n' && x[2] == 'd' &&
+			x[3] == 'c' && x[4] == 'l' && x[5] == 'a' && x[6] == 's' && x[7] == 's');
+	}
+	BOOL isNewClass(std::string x)
+	{
+		return (x[0] == 'n' && x[1] == 'e' && x[2] == 'w' &&
+			x[3] == 'c' && x[4] == 'l' && x[5] == 'a' && x[6] == 's' && x[7] == 's');
+	}
+
 
 	BOOL switchQuickScope(std::string x)
 	{
@@ -771,6 +894,15 @@ namespace miniLexer
 		return false;
 	}
 
+	BOOL isgStackTop(std::string data)
+	{
+		if (data == "gstacktop") //&& GSTACKACCESS?????
+		{
+			return true;
+		}
+		return false;
+	}
+
 	typeSet isOperator(char* data)
 	{
 		//no need to use std::string data since its 1 character
@@ -859,6 +991,10 @@ namespace miniLexer
 		{
 			return typeSet::GOTOCALL;
 		}
+		if (isgStackTop(x))
+		{
+			return typeSet::GSTACKTOPCALL;
+		}
 		if (isSwitchIf(x))
 		{
 			switch (isSwitchIf(x))
@@ -870,6 +1006,18 @@ namespace miniLexer
 				return typeSet::CLOSEIF;
 				break;
 			}
+		}
+		if (isOpenClass(x))
+		{
+			return typeSet::DEFCLASSTYPE;
+		}
+		if (isEndClass(x))
+		{
+			return typeSet::ENDCLASSTYPE;
+		}
+		if (isNewClass(x))
+		{
+			return typeSet::NEWCLASSVAR;
 		}
 		if (isEnableStack(x))
 		{
@@ -1003,6 +1151,7 @@ namespace miniLexer
 }
 void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 {
+	//std::cout << "code: " << code << std::endl;
 	if (stack.finishEarly)
 	{
 		return;
@@ -1043,6 +1192,18 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 			stack.functionWriterName = "";
 			stack.functionsCode.clear();
 			stack.functionWriter = false;
+		}
+	}
+	if (stack.classWriter)
+	{
+		if (miniLexer::isEndClass(code))
+		{
+			stack.classWriter = false;
+			stack.classStack.newClassType(stack.classTypeName, stack.classLines);
+		}
+		else
+		{
+			stack.classLines.push_back(code);
 		}
 	}
 	if (stack.loopWriter)
@@ -1089,6 +1250,13 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 	while ((token = strtok_s(rest, " ", &rest)))
 	{
 		//std::cout << "Token: " << token << std::endl;
+		if (miniLexer::isgStackTop(token))
+		{
+			//token = (char*)(std::to_string(stack.top)).c_str();
+			//std::cout << "Token: " << token << std::endl;
+			keys.push_back(std::to_string(stack.top));
+			continue;
+		}
 		if (setToString)
 		{
 			keys[stringLoc] += " ";
@@ -1164,6 +1332,11 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 			}*/
 			stack.pop(keys[i]);
 		}
+		if (type == typeSet::GSTACKTOPCALL)
+		{
+			type = typeSet::INTEGER;
+			keys[i] = std::to_string(stack.top);
+		}
 		if (type == typeSet::COMMENT)
 		{
 			break;
@@ -1216,7 +1389,7 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 		case typeSet::KEYCALL:
 			//std::cout << "keycall: ";
 			//std::cout << keys[type] << " | " << stack.gettop();
-			keycall::keycall(keys[type], (char*)stack.gettop().c_str(), stack);
+			keycall::keycall(keys[type], (char*)stack.gettop().c_str(), stack, types, keys, type);
 			break;
 		case typeSet::UKEYCALL:
 			//std::cout << "ukeycall\n";
@@ -1267,8 +1440,8 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 			skipnext = true;
 			break;
 		case typeSet::SUB:
-			//std::cout << "Adding: " << (keys[type - 1]);
-			//std::cout << " + " << (stack.gettop()) << std::endl;
+			std::cout << "Subtracting: " << (keys[type - 1]);
+			std::cout << " - " << (stack.gettop()) << std::endl;
 			stack.pop(std::to_string(std::stod(keys[type - 1]) - std::stod(stack.gettop())));
 			skipnext = true;
 			break;
@@ -1396,7 +1569,7 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 				//std::cout << "pushstack: " << stack.gettop();
 				// std::cout << " | " << stack.stack[stack.top - 1] << std::endl;
 				//stack.userStackStack.pushStack(stack.gettop(), stack.stack[stack.top - 1]);
-				keycall::printgstack(stack);
+				//keycall::printgstack(stack);
 				if (stack.stack[stack.top - 2] == "SECOND_STACK_CALL")
 				{
 					if (stack.userStackStack.isStack(stack.stack[stack.top - 1]))
@@ -1432,9 +1605,16 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 			}
 			break;
 		case typeSet::STARTFOR:
+			if (types[type + 1] != INTEGER && types[type + 1] != ODOUBLE)
+			{
+				//if(types[type + 1] == typeSet::)
+				std::cout << "GLOSTA ERROR [LINE " << lineinfo << "] | Cannot loop through a non-numerical value (" << keys[type + 1] << " is OP_" << types[type + 1] << ")" << std::endl;
+				break;
+			}
 			stack.loopWriter = true;
 			stack.loopType = 1;
 			stack.toLoopNum = std::stol(stack.gettop());
+			std::cout << "To Loop: " << stack.toLoopNum << std::endl;
 			break;
 		case typeSet::ENDFOR:
 			stack.loopWriter = false;
@@ -1470,6 +1650,18 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 		case typeSet::GSTACKACCESS:
 			keycall::enablegstack();
 			break;
+		case typeSet::DEFCLASSTYPE:
+			stack.classWriter = true;
+			stack.classTypeName = stack.gettop();
+			break;
+		case typeSet::NEWCLASSVAR:
+			//stack.classStack.newClassVar(stack.gettop().c_str(), stack.stack[stack.top - 1], stack);
+			std::vector<std::string> returnedInfo = stack.classStack.newClassVar(stack.gettop().c_str(), stack.stack[stack.top - 1]);
+			for (std::string retin : returnedInfo)
+			{
+				stack.variableStack.pop(retin.c_str(), (char*)"nil");
+			}
+			break;
 		//case typeSet::VARREF:
 		//	stack.pop(stack.variableStack.retValue(keys[type]));
 		}
@@ -1478,4 +1670,3 @@ void gloneb_vm(const char* code, Stack& stack, int lineinfo)
 		
 }
 
-//cant believe we're at nearly 1.5k!
